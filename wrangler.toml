@@ -5,7 +5,7 @@ compatibility_date = "2025-01-01"
 [vars]
 # 앱을 올릴 실제 주소로 바꾸세요. 쉼표로 여러 개 가능합니다.
 # 로컬 테스트 중이라면 "http://localhost:8080" 를 잠깐 추가하세요.
-ALLOWED_ORIGINS = "https://내계정.github.io"
+ALLOWED_ORIGINS = "https://oburimp.github.io"
 
 # Places 키는 여기 두지 않습니다:
 #   wrangler secret put GOOGLE_KEY
