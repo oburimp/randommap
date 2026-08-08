@@ -1,0 +1,19 @@
+{
+  "name": "오늘 뭐 먹지 · 반경 룰렛",
+  "short_name": "뭐먹지",
+  "description": "내 주변 식당을 반경·평점·리뷰 수로 걸러 슬롯머신으로 뽑아 줍니다.",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B1416",
+  "theme_color": "#0B1416",
+  "categories": ["food", "lifestyle", "utilities"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

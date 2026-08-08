@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>오늘 뭐 먹지 · 반경 룰렛</title>
+<meta name="description" content="내 주변 식당을 반경·평점·리뷰 수로 걸러 슬롯머신으로 뽑아 줍니다.">
+<meta name="theme-color" content="#0B1416">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  --ink:#0B1416; --ink2:#0E1B1D; --line:#24403E; --cream:#F1E9D6; --gold:#F2C14E;
+  --sign:#2F7A5B; --mint:#5FD6A0; --mute:#7FA391; --glass:rgba(11,20,22,.82);
+  background:var(--ink); color:var(--cream);
+  font-family:'IBM Plex Sans KR','Apple SD Gothic Neo','Noto Sans KR',system-ui,sans-serif;
+  font-feature-settings:"tnum" 1;
+  -webkit-tap-highlight-color:transparent; overflow-x:hidden;
+}
+button,input{font-family:inherit}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* ── 지도 배경 ── */
+#mapLayer{position:fixed;inset:0;z-index:0}
+#demoMap,#gmap{position:absolute;inset:0;width:100%;height:100%}
+#gmap{display:none}
+#scrim{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:
+    radial-gradient(90% 55% at 50% 12%, rgba(11,20,22,.15) 0%, rgba(11,20,22,.86) 62%, #0B1416 100%),
+    linear-gradient(180deg, rgba(11,20,22,.55) 0%, rgba(11,20,22,.2) 22%, rgba(11,20,22,.92) 58%, #0B1416 78%)}
+
+main{position:relative;z-index:2;max-width:460px;margin:0 auto;
+  padding:max(20px,env(safe-area-inset-top)) 16px calc(46px + env(safe-area-inset-bottom))}
+
+/* ── 헤더 ── */
+.eyebrow{font-size:11px;letter-spacing:.2em;color:#8CB0A2;font-weight:600;margin:0 0 7px}
+h1{font-family:'Black Han Sans','Apple SD Gothic Neo',sans-serif;font-weight:400;
+  font-size:clamp(29px,8.6vw,40px);line-height:1.08;margin:0;
+  text-shadow:0 2px 20px rgba(0,0,0,.6)}
+h1 span{color:var(--gold)}
+.loc{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12.5px;color:#A6C4B7}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--gold);flex:none;
+  box-shadow:0 0 0 4px rgba(242,193,78,.18)}
+.dot.live{background:var(--mint);box-shadow:0 0 0 4px rgba(95,214,160,.16);
+  animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 9px rgba(95,214,160,0)}}
+.loc button{background:none;border:none;color:var(--gold);font-size:12px;cursor:pointer;
+  text-decoration:underline;text-underline-offset:3px;padding:0;margin-left:auto}
+
+/* ── 슬롯 ── */
+.machine{display:flex;gap:12px;align-items:stretch;margin-top:18px}
+.slot{flex:1;position:relative;background:var(--glass);border:1px solid var(--line);
+  border-radius:18px;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,.6), inset 0 0 0 1px rgba(241,233,214,.05);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+#window{height:318px;overflow:hidden;position:relative}
+#reel{will-change:transform}
+#reel.spin{transition:transform var(--dur,4200ms) cubic-bezier(.06,.72,.2,1);
+  animation:reelBlur var(--dur,4200ms) linear both}
+#reel.settle{transition:transform 240ms cubic-bezier(.34,1.5,.5,1)}
+@keyframes reelBlur{
+  0%{filter:blur(0)} 7%{filter:blur(3.2px)} 52%{filter:blur(2.4px)}
+  86%{filter:blur(.5px)} 100%{filter:blur(0)}}
+.item{height:106px;display:flex;align-items:center;gap:12px;padding:0 14px;
+  border-bottom:1px solid rgba(241,233,214,.06)}
+.thumb{width:74px;height:74px;border-radius:12px;flex:none;object-fit:cover;
+  background:#16292c;border:1px solid rgba(241,233,214,.1)}
+.meta{min-width:0;flex:1}
+.nm{font-family:'Black Han Sans',sans-serif;font-size:19px;line-height:1.2;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{font-size:11.5px;color:#93AFA5;margin-top:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{display:inline-block;font-size:10.5px;font-weight:600;color:var(--gold);
+  border:1px solid rgba(242,193,78,.35);border-radius:5px;padding:1px 5px;margin-right:5px}
+#gate{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(11,20,22,.94) 0%,rgba(11,20,22,.1) 30%,
+    rgba(11,20,22,0) 50%,rgba(11,20,22,.1) 70%,rgba(11,20,22,.94) 100%)}
+#pay{position:absolute;left:0;right:0;top:106px;height:106px;pointer-events:none;
+  border-top:2px solid var(--gold);border-bottom:2px solid var(--gold);
+  box-shadow:0 0 26px rgba(242,193,78,.16) inset;transition:background .2s}
+#pay.hit{background:rgba(242,193,78,.1);animation:payHit .55s ease-out}
+@keyframes payHit{0%{box-shadow:0 0 0 rgba(242,193,78,.7) inset}
+  40%{box-shadow:0 0 44px rgba(242,193,78,.5) inset}
+  100%{box-shadow:0 0 26px rgba(242,193,78,.16) inset}}
+#pay i{position:absolute;top:50%;translate:0 -50%;width:0;height:0;
+  border-top:7px solid transparent;border-bottom:7px solid transparent}
+#pay i.l{left:-1px;border-left:10px solid var(--gold)}
+#pay i.r{right:-1px;border-right:10px solid var(--gold)}
+.empty{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:9px;text-align:center;padding:26px;color:#8CB0A2;font-size:13.5px;line-height:1.65}
+.empty.on{display:flex}
+.empty b{color:var(--gold);font-weight:600;font-size:14px}
+.skel .item{opacity:.5}
+.skel .thumb,.skel .bar{background:linear-gradient(90deg,#16292c,#1e373b,#16292c);
+  background-size:200% 100%;animation:shim 1.3s linear infinite}
+.skel .bar{height:13px;border-radius:5px}
+.skel .bar+.bar{height:10px;margin-top:8px;width:58%}
+@keyframes shim{to{background-position:-200% 0}}
+
+/* ── 레버 ── */
+.lever{width:52px;flex:none;background:var(--glass);border:1px solid var(--line);
+  border-radius:18px;position:relative;cursor:grab;backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);touch-action:none;padding:0;
+  box-shadow:0 24px 60px rgba(0,0,0,.6)}
+.lever:disabled{opacity:.4;cursor:default}
+.lever.dragging{cursor:grabbing}
+.rail{position:absolute;left:50%;translate:-50%;top:26px;bottom:26px;width:7px;
+  border-radius:4px;background:linear-gradient(180deg,#22393b,#14262a)}
+.knob{position:absolute;left:50%;translate:-50%;top:calc(30px + var(--pull,0px));
+  width:34px;height:34px;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,#E8624B,#8E2C22);
+  border:2px solid var(--cream);box-shadow:0 6px 14px rgba(0,0,0,.55);
+  transition:top .2s cubic-bezier(.3,1.4,.5,1)}
+.lever.dragging .knob{transition:none}
+.lever span{position:absolute;bottom:9px;left:0;right:0;text-align:center;
+  font-size:9.5px;letter-spacing:.16em;color:#7FA391;font-weight:600}
+
+/* ── 결과 ── */
+.result{margin-top:14px;border:1px solid var(--line);border-radius:16px;background:var(--glass);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:16px;
+  display:none;animation:pop .4s cubic-bezier(.2,1.3,.4,1) both}
+.result.on{display:block}
+@keyframes pop{0%{scale:.94;opacity:0}100%{scale:1;opacity:1}}
+.rhero{margin:-16px -16px 14px;height:150px;overflow:hidden;background:#16292c;
+  border-radius:15px 15px 0 0}
+.rhero img{width:100%;height:100%;object-fit:cover;display:block;
+  animation:fadein .5s ease both}
+@keyframes fadein{from{opacity:0;scale:1.04}}
+.result h2{font-family:'Black Han Sans',sans-serif;font-weight:400;font-size:27px;margin:6px 0 0}
+.rtop{font-size:11px;letter-spacing:.2em;color:var(--gold);font-weight:600}
+.rmeta{font-size:12.5px;color:#A6C4B7;margin-top:7px;line-height:1.6}
+.acts{display:flex;gap:8px;margin-top:13px}
+.acts a,.acts button{flex:1;text-align:center;text-decoration:none;padding:12px;border-radius:11px;
+  border:1px solid var(--line);background:transparent;color:#9CB8AF;font-size:13px;font-weight:600;cursor:pointer}
+.acts a.go{background:var(--sign);border-color:var(--sign);color:#F3FBF6}
+.skip{width:100%;margin-top:8px;padding:11px;border-radius:11px;border:1px dashed var(--line);
+  background:transparent;color:#6D8C83;font-size:12.5px;font-weight:600;cursor:pointer}
+
+/* ── 컨트롤 ── */
+.card{margin-top:14px;border:1px solid var(--line);border-radius:16px;background:var(--glass);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:16px}
+.lab{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;
+  letter-spacing:.18em;color:#6D8C83;font-weight:600;margin-bottom:11px}
+.lab.gap{margin-top:18px}
+.lab b{color:var(--gold);font-weight:600;letter-spacing:0;font-size:13px}
+input[type=range]{width:100%;accent-color:#F2C14E;height:24px}
+.ticks{display:flex;justify-content:space-between;font-size:10px;color:#546E68;margin-top:-2px}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{border:1px solid var(--line);background:transparent;color:#9CB8AF;padding:7px 13px;
+  border-radius:999px;font-size:12.5px;font-weight:600;cursor:pointer;transition:.16s}
+.chip[data-on="true"]{background:var(--gold);border-color:var(--gold);color:#241C05}
+.chip small{opacity:.55;font-size:11px;margin-left:3px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  border-top:1px solid var(--line);padding-top:13px;margin-top:14px;font-size:13px}
+.row p{margin:3px 0 0;font-size:11px;color:#6D8C83;line-height:1.5}
+.sw{width:46px;height:26px;border-radius:999px;border:1px solid var(--line);background:#0F1D20;
+  position:relative;cursor:pointer;flex:none;transition:.18s}
+.sw[data-on="true"]{background:var(--sign);border-color:var(--sign)}
+.sw i{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
+  background:var(--cream);transition:.18s}
+.sw[data-on="true"] i{left:22px}
+
+/* ── 리스트 ── */
+.list{margin-top:8px}
+.li{display:flex;align-items:center;gap:11px;padding:9px 0;border-top:1px solid rgba(241,233,214,.07)}
+.li:first-child{border-top:none}
+.li .thumb{width:52px;height:52px;border-radius:10px}
+.li .n{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li .s{font-size:11px;color:var(--mute);margin-top:3px}
+.li .d{margin-left:auto;font-size:11.5px;color:#93AFA5;flex:none;text-align:right}
+
+.manual{display:none}
+.manual.on{display:block;animation:pop .3s cubic-bezier(.2,1.3,.4,1) both}
+.why{font-size:12px;color:#C79A5E;line-height:1.7;margin:0 0 12px;
+  border-left:2px solid rgba(242,193,78,.5);padding-left:11px}
+.linkbtn{background:none;border:none;color:#6D8C83;font-size:11.5px;cursor:pointer;
+  text-decoration:underline;text-underline-offset:3px;padding:0;letter-spacing:0}
+.krow{display:flex;gap:8px;margin:12px 0 0}
+.krow input{flex:1;padding:11px;border-radius:9px;border:1px solid var(--line);
+  background:var(--ink2);color:var(--cream);font-size:13px;min-width:0}
+.krow button{flex:none;padding:11px 16px;border-radius:9px;border:1px solid var(--gold);
+  background:var(--gold);color:#241C05;font-size:12.5px;font-weight:600;cursor:pointer}
+#install{display:none;width:100%;margin-top:12px;padding:13px;border-radius:12px;
+  border:1px solid var(--gold);background:rgba(242,193,78,.1);color:var(--gold);
+  font-size:13.5px;font-weight:600;cursor:pointer}
+.foot{margin-top:18px;font-size:11px;color:#4E6A64;line-height:1.7;text-align:center}
+.toast{position:fixed;left:50%;bottom:26px;translate:-50% 0;z-index:9;background:#152628;
+  border:1px solid var(--line);color:var(--cream);padding:11px 17px;border-radius:11px;
+  font-size:12.5px;opacity:0;pointer-events:none;transition:.25s;max-width:88vw;text-align:center}
+.toast.on{opacity:1;translate:-50% -8px}
+@media (prefers-reduced-motion:reduce){
+  #reel.spin{transition-duration:600ms!important;animation:none!important}
+  .dot.live{animation:none}
+}
+</style>
+</head>
+<body>
+
+<div id="mapLayer"><canvas id="demoMap"></canvas><div id="gmap"></div></div>
+<div id="scrim"></div>
+
+<main>
+  <p class="eyebrow">반경 <span id="rLabel">500</span>m · 후보 <span id="cLabel">0</span>곳</p>
+  <h1>오늘 뭐 먹지<br><span>돌려서 정하자</span></h1>
+
+  <div class="loc">
+    <i class="dot" id="dot"></i><span id="locTxt">위치 확인 중…</span>
+    <button id="refresh">다시 탐색</button>
+  </div>
+
+  <div class="card manual" id="manual">
+    <div class="lab"><span>위치 직접 지정</span>
+      <button class="linkbtn" id="manualClose">닫기</button></div>
+    <p class="why" id="why"></p>
+    <div class="chips" id="presets"></div>
+    <div class="krow">
+      <input type="text" id="coordIn" placeholder="37.5665, 126.9780  또는 구글지도 링크">
+      <button id="coordGo">이동</button>
+    </div>
+  </div>
+
+  <div class="machine">
+    <div class="slot">
+      <div id="window">
+        <div id="reel"></div>
+        <div id="gate"></div>
+        <div id="pay"><i class="l"></i><i class="r"></i></div>
+        <div class="empty" id="emptyMsg"></div>
+      </div>
+    </div>
+    <button class="lever" id="lever" aria-label="레버를 당겨서 식당 뽑기">
+      <div class="rail"></div><div class="knob"></div><span>PULL</span>
+    </button>
+  </div>
+
+  <div class="result" id="result" aria-live="polite"></div>
+
+  <div class="card">
+    <div class="lab"><span>탐색 반경</span><b id="rVal">500 m</b></div>
+    <input type="range" id="radius" min="300" max="1000" step="100" value="500" aria-label="탐색 반경">
+    <div class="ticks"><span>300</span><span>500</span><span>700</span><span>1km</span></div>
+
+    <div class="lab gap"><span>최소 평점</span></div>
+    <div class="chips" id="rateChips"></div>
+
+    <div class="lab gap"><span>최소 리뷰 수</span></div>
+    <div class="chips" id="countChips"></div>
+
+    <div class="lab gap"><span>음식 종류</span>
+      <button class="linkbtn" id="typeClear">전체 보기</button></div>
+    <div class="chips" id="typeChips"></div>
+
+    <div class="row"><div><span>지금 영업 중만</span>
+      <p>영업시간 정보가 없는 곳은 그대로 남습니다.</p></div>
+      <div class="sw" id="openSw" role="switch" tabindex="0" aria-checked="false"><i></i></div></div>
+    <div class="row"><div><span>평점 높은 곳 우대</span>
+      <p>끄면 후보 전체가 똑같은 확률로 나옵니다.</p></div>
+      <div class="sw" id="boostSw" role="switch" tabindex="0" aria-checked="false"><i></i></div></div>
+    <div class="row"><span>효과음</span>
+      <div class="sw" id="soundSw" role="switch" tabindex="0" aria-checked="true" data-on="true"><i></i></div></div>
+  </div>
+
+  <div class="card">
+    <div class="lab"><span>후보 목록</span><b id="listCount"></b></div>
+    <div class="list" id="list"></div>
+  </div>
+
+  <button id="install">홈 화면에 앱으로 설치</button>
+  <p class="foot" id="foot">장소 정보 · 평점 제공: Google</p>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══════ 배포 설정 ══════
+   PROXY : Cloudflare Worker 주소. 비워 두면 데모 데이터로 동작합니다.
+   MAPS_KEY : 선택 사항. 비워 두면 내장 캔버스 지도를 씁니다(무료·오프라인).
+              쓰려면 Maps JavaScript API 전용 키에 HTTP 리퍼러 제한을 거세요. */
+const CONFIG = {
+  PROXY: "",
+  MAPS_KEY: ""
+};
+
+/* ══════ 상태 ══════ */
+const LS = (k, d) => localStorage.getItem(k) ?? d;
+const S = {
+  lat:37.5665, lng:126.9780, live:false,
+  all:[], cands:[], loading:false,
+  radius:+LS("fp-radius",500), minRate:+LS("fp-rate",0), minCount:+LS("fp-count",0),
+  openOnly:LS("fp-open","0")==="1", sound:LS("fp-sound","1")!=="0", boost:LS("fp-boost","0")==="1",
+  types:new Set(), banned:new Set(), recent:[],
+  spinning:false, winner:null, map:null, markers:[]
+};
+const $ = id => document.getElementById(id);
+const H = 106, STRIP = 30, LAND = 28;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("on");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("on"),2600); }
+
+/* ══════ 데모 데이터 ══════ */
+const DEMO = [
+  ["할매국밥","국밥",4.6,312,120,35],["청기와 삼겹","고기구이",4.3,880,210,-60],
+  ["미도인 파스타","이탈리안",4.5,1540,330,80],["사보텐 돈까스","돈까스",4.1,640,180,-140],
+  ["연남 마라탕","중식",4.4,1120,410,150],["소바하우스","일식",4.7,470,260,-200],
+  ["교동 짬뽕","중식",3.9,2300,150,60],["오늘의 백반","한식",4.2,510,90,-40],
+  ["버거피플","버거",4.0,1760,480,220],["쌀국수 사이공","베트남",4.5,930,350,-260],
+  ["철판마초","일식",4.8,24,620,180],["동네반점","중식",3.6,41,540,-320],
+  ["초밥연구소","스시",4.6,1380,700,90],["김밥천사","분식",3.8,210,140,-100],
+  ["명동칼국수","한식",4.4,760,860,300],["타코스 로코","멕시칸",4.2,8,930,-380]
+];
+const demoData = () => DEMO.map(([name,type,rating,count,dx,dy],i)=>({
+  id:"demo"+i, name, type, rating, count,
+  lat:S.lat+dy/111000, lng:S.lng+dx/(111000*Math.cos(S.lat*Math.PI/180)),
+  dist:Math.round(Math.hypot(dx,dy)), open:i%7!==3, photo:null, uri:null, tel:null
+})).sort((a,b)=>a.dist-b.dist);
+
+/* ══════ 썸네일 ══════ */
+const thumbCache={};
+function fallbackThumb(name){
+  if(thumbCache[name]) return thumbCache[name];
+  let h=0; for(const c of name) h=(h*31+c.charCodeAt(0))>>>0;
+  const hue=h%360;
+  const c=document.createElement("canvas"); c.width=c.height=160;
+  const x=c.getContext("2d");
+  const g=x.createLinearGradient(0,0,160,160);
+  g.addColorStop(0,`hsl(${hue} 32% 30%)`); g.addColorStop(1,`hsl(${(hue+42)%360} 30% 17%)`);
+  x.fillStyle=g; x.fillRect(0,0,160,160);
+  x.globalAlpha=.14; x.fillStyle="#F1E9D6";
+  for(let i=0;i<5;i++){ x.beginPath(); x.arc((h>>i*3)%160,(h>>(i*3+2))%160,18+i*7,0,7); x.fill(); }
+  x.globalAlpha=1; x.fillStyle="rgba(241,233,214,.92)";
+  x.font="700 74px 'Black Han Sans',sans-serif"; x.textAlign="center"; x.textBaseline="middle";
+  x.fillText(name[0],80,88);
+  return thumbCache[name]=c.toDataURL();
+}
+/* 구글 사진은 별도 SKU로 과금되므로 당첨된 한 곳에만 씁니다.
+   릴과 목록의 썸네일은 이름에서 생성한 이미지라 호출 비용이 0입니다. */
+const photoUrl = (p,h=320) => p.photo && CONFIG.PROXY
+  ? `${CONFIG.PROXY}/photo?name=${encodeURIComponent(p.photo)}&h=${h}`
+  : null;
+
+/* ══════ 지도 ══════ */
+function drawDemoMap(){
+  const c=$("demoMap"), dpr=Math.min(2,devicePixelRatio||1);
+  const w=innerWidth, h=innerHeight;
+  c.width=w*dpr; c.height=h*dpr; c.style.width=w+"px"; c.style.height=h+"px";
+  const x=c.getContext("2d"); x.scale(dpr,dpr);
+  x.fillStyle="#0E1B1D"; x.fillRect(0,0,w,h);
+  const cx=w/2, cy=h*0.30;
+  let seed=Math.floor(S.lat*1e4)+Math.floor(S.lng*1e4);
+  const rnd=()=>(seed=(seed*1664525+1013904223)>>>0)/4294967296;
+  x.fillStyle="#132528";
+  for(let gx=-2;gx<w/86+2;gx++) for(let gy=-2;gy<h/86+2;gy++)
+    x.fillRect(gx*86+rnd()*10,gy*86+rnd()*10,62+rnd()*16,58+rnd()*16);
+  x.strokeStyle="#1B3236"; x.lineWidth=9;
+  for(let gx=0;gx<w/86+1;gx++){ x.beginPath(); x.moveTo(gx*86-12,0); x.lineTo(gx*86-12,h); x.stroke(); }
+  for(let gy=0;gy<h/86+1;gy++){ x.beginPath(); x.moveTo(0,gy*86-14); x.lineTo(w,gy*86-14); x.stroke(); }
+  x.strokeStyle="#26454A"; x.lineWidth=15;
+  x.beginPath(); x.moveTo(0,cy+140); x.bezierCurveTo(w*.3,cy+95,w*.65,cy+190,w,cy+120); x.stroke();
+  x.strokeStyle="#173A44"; x.lineWidth=34; x.globalAlpha=.85;
+  x.beginPath(); x.moveTo(-20,h*.72); x.bezierCurveTo(w*.35,h*.62,w*.6,h*.86,w+20,h*.74); x.stroke();
+  x.globalAlpha=1;
+  const scale=(Math.min(w,h)*0.30)/1000;
+  x.beginPath(); x.arc(cx,cy,S.radius*scale,0,7);
+  x.fillStyle="rgba(242,193,78,.07)"; x.fill();
+  x.strokeStyle="rgba(242,193,78,.45)"; x.lineWidth=1.6; x.setLineDash([7,7]); x.stroke(); x.setLineDash([]);
+  for(const p of S.cands){
+    const dx=(p.lng-S.lng)*111000*Math.cos(S.lat*Math.PI/180), dy=(p.lat-S.lat)*111000;
+    const hit=S.winner&&p.id===S.winner.id;
+    x.beginPath(); x.arc(cx+dx*scale,cy-dy*scale,hit?9:5,0,7);
+    x.fillStyle=hit?"#F2C14E":"#4E8F74"; x.fill();
+    x.strokeStyle="rgba(11,20,22,.85)"; x.lineWidth=2; x.stroke();
+  }
+  x.beginPath(); x.arc(cx,cy,15,0,7); x.fillStyle="rgba(95,214,160,.18)"; x.fill();
+  x.beginPath(); x.arc(cx,cy,6.5,0,7); x.fillStyle="#5FD6A0"; x.fill();
+  x.strokeStyle="#0B1416"; x.lineWidth=2.5; x.stroke();
+}
+addEventListener("resize",()=>{ if(!S.map) drawDemoMap(); });
+
+const MAP_STYLE=[
+  {elementType:"geometry",stylers:[{color:"#132528"}]},
+  {elementType:"labels.text.fill",stylers:[{color:"#6E8C82"}]},
+  {elementType:"labels.text.stroke",stylers:[{color:"#0B1416"}]},
+  {featureType:"poi",stylers:[{visibility:"off"}]},
+  {featureType:"road",elementType:"geometry",stylers:[{color:"#1B3236"}]},
+  {featureType:"road.arterial",elementType:"geometry",stylers:[{color:"#26454A"}]},
+  {featureType:"water",elementType:"geometry",stylers:[{color:"#0F2B31"}]},
+  {featureType:"transit",stylers:[{visibility:"off"}]},
+  {featureType:"administrative",elementType:"geometry",stylers:[{visibility:"off"}]}
+];
+function loadGMap(){
+  if(!CONFIG.MAPS_KEY) return;
+  if(window.google?.maps) return renderMap();
+  const s=document.createElement("script");
+  s.src=`https://maps.googleapis.com/maps/api/js?key=${CONFIG.MAPS_KEY}&v=weekly&language=ko&region=KR`;
+  s.async=true; s.onload=renderMap;
+  s.onerror=()=>toast("지도를 불러오지 못해 기본 지도로 표시합니다");
+  document.head.appendChild(s);
+}
+function renderMap(){
+  if(!window.google?.maps) return;
+  $("gmap").style.display="block"; $("demoMap").style.display="none";
+  if(!S.map){
+    S.map=new google.maps.Map($("gmap"),{center:{lat:S.lat,lng:S.lng},zoom:16,styles:MAP_STYLE,
+      disableDefaultUI:true,gestureHandling:"greedy",backgroundColor:"#0E1B1D"});
+  } else S.map.setCenter({lat:S.lat,lng:S.lng});
+  S.markers.forEach(m=>m.setMap(null)); S.markers=[];
+  S.markers.push(new google.maps.Circle({map:S.map,center:{lat:S.lat,lng:S.lng},radius:S.radius,
+    strokeColor:"#F2C14E",strokeOpacity:.5,strokeWeight:1.6,fillColor:"#F2C14E",fillOpacity:.06}));
+  S.markers.push(new google.maps.Marker({map:S.map,position:{lat:S.lat,lng:S.lng},
+    icon:{path:google.maps.SymbolPath.CIRCLE,scale:7,fillColor:"#5FD6A0",fillOpacity:1,
+      strokeColor:"#0B1416",strokeWeight:2.5}}));
+  for(const p of S.cands){
+    const hit=S.winner&&p.id===S.winner.id;
+    S.markers.push(new google.maps.Marker({map:S.map,position:{lat:p.lat,lng:p.lng},title:p.name,
+      zIndex:hit?9:1,icon:{path:google.maps.SymbolPath.CIRCLE,scale:hit?9:5,
+        fillColor:hit?"#F2C14E":"#4E8F74",fillOpacity:1,strokeColor:"#0B1416",strokeWeight:2}}));
+  }
+  S.map.panBy(0,-innerHeight*0.18);
+}
+const paintMap = () => S.map||window.google?.maps ? renderMap() : drawDemoMap();
+
+/* ══════ 위치 ══════ */
+const PRESETS=[["서울시청",37.5663,126.9779],["강남역",37.4979,127.0276],
+  ["홍대입구",37.5572,126.9245],["판교역",37.3947,127.1112],
+  ["천안아산역",36.7946,127.1045],["해운대",35.1587,129.1604]];
+const framed = () => { try{ return window.self!==window.top; }catch(e){ return true; } };
+const insecure = () => !(location.protocol==="https:" ||
+  ["localhost","127.0.0.1","[::1]"].includes(location.hostname));
+
+function whyBlocked(code){
+  if(insecure()) return location.protocol==="file:"
+    ? "파일을 직접 열면(file://) 브라우저가 위치 기능을 막습니다. https 주소로 올려서 접속하면 풀립니다."
+    : "https 연결이 아니라 위치 기능이 막혔습니다. https 주소로 접속해 주세요.";
+  if(framed()) return "미리보기 프레임 안에서는 위치 권한이 정책상 막힙니다. 새 탭에서 주소로 직접 열면 동작합니다.";
+  if(code===1) return "이 사이트의 위치 권한이 거부돼 있습니다. 주소창 왼쪽 자물쇠 → 사이트 설정 → 위치를 허용으로 바꾸고 새로고침해 주세요. 기기 설정의 위치 서비스도 켜져 있어야 합니다.";
+  if(code===2) return "위치 신호를 잡지 못했습니다. 실내이거나 기기 위치 서비스가 꺼져 있을 수 있습니다.";
+  if(code===3) return "위치 확인이 시간 안에 끝나지 않았습니다. 다시 시도하거나 아래에서 직접 지정해 주세요.";
+  return "위치를 가져오지 못했습니다.";
+}
+function locate(){
+  if(!navigator.geolocation) return failLocate(0);
+  $("locTxt").textContent="위치 확인 중…";
+  navigator.geolocation.getCurrentPosition(
+    p=>{ S.lat=p.coords.latitude; S.lng=p.coords.longitude; S.live=true;
+         $("manual").classList.remove("on");
+         afterLocate(`현재 위치 · 오차 약 ${Math.round(p.coords.accuracy)}m`); },
+    e=>failLocate(e.code),
+    {enableHighAccuracy:true,timeout:9000,maximumAge:60000});
+}
+function failLocate(code){
+  S.live=false; $("why").textContent=whyBlocked(code);
+  $("manual").classList.add("on");
+  afterLocate("위치 미확인 · 아래에서 직접 지정할 수 있어요");
+}
+function afterLocate(msg){
+  $("locTxt").textContent=msg;
+  $("dot").className="dot"+(S.live?" live":"");
+  paintMap(); fetchPlaces();
+}
+function setManual(lat,lng,label){
+  S.lat=lat; S.lng=lng; S.live=false;
+  $("locTxt").textContent=label+" 기준"; $("dot").className="dot";
+  S.banned.clear(); S.recent=[]; S.types.clear();
+  paintMap(); fetchPlaces();
+  toast(label+"(으)로 이동했습니다");
+}
+$("presets").innerHTML=PRESETS.map(([n,a,g])=>
+  `<button class="chip" data-lat="${a}" data-lng="${g}" data-nm="${esc(n)}">${esc(n)}</button>`).join("");
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-lat]"); if(!b) return;
+  setManual(+b.dataset.lat,+b.dataset.lng,b.dataset.nm);
+});
+$("manualClose").onclick=()=>$("manual").classList.remove("on");
+$("coordGo").onclick=()=>{
+  const v=$("coordIn").value.trim();
+  const m=v.match(/@(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || v.match(/(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+  if(!m) return toast("좌표를 읽지 못했습니다. 예: 37.5665, 126.9780");
+  const la=+m[1], ln=+m[2];
+  if(Math.abs(la)>90||Math.abs(ln)>180) return toast("좌표 범위를 벗어났습니다");
+  setManual(la,ln,"지정 좌표");
+};
+
+/* ══════ 검색 ══════ */
+const cacheKey = () => `fp-c-${S.lat.toFixed(3)},${S.lng.toFixed(3)}`;
+function haversine(a,b,c,d){
+  const R=6371000, t=x=>x*Math.PI/180;
+  const dl=t(c-a), dg=t(d-b);
+  const q=Math.sin(dl/2)**2+Math.cos(t(a))*Math.cos(t(c))*Math.sin(dg/2)**2;
+  return 2*R*Math.asin(Math.sqrt(q));
+}
+async function fetchPlaces(){
+  if(!CONFIG.PROXY){
+    S.all=demoData(); applyFilters();
+    toast("데모 데이터로 실행 중 — 실제 검색은 서버 설정이 필요합니다");
+    return;
+  }
+  const cached=sessionStorage.getItem(cacheKey());
+  if(cached){ S.all=JSON.parse(cached); applyFilters(); return; }
+
+  S.loading=true; renderReel(); $("lever").disabled=true;
+  try{
+    const res=await fetch(CONFIG.PROXY+"/nearby",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({lat:S.lat,lng:S.lng})
+    });
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const j=await res.json();
+    S.all=(j.places||[])
+      .filter(p=>isFinite(p.lat)&&isFinite(p.lng))
+      .map(p=>({...p, dist:Math.round(haversine(S.lat,S.lng,p.lat,p.lng))}))
+      .sort((a,b)=>a.dist-b.dist);
+    sessionStorage.setItem(cacheKey(),JSON.stringify(S.all));
+  }catch(e){
+    S.all=demoData();
+    toast("검색에 실패해 데모 데이터로 표시합니다 ("+e.message+")");
+  }finally{
+    S.loading=false; applyFilters();
+  }
+}
+
+/* ══════ 필터 ══════ */
+const F = {
+  rad:  p=>p.dist<=S.radius,
+  rate: p=>p.rating>=S.minRate,
+  cnt:  p=>p.count>=S.minCount,
+  open: p=>!S.openOnly||p.open!==false,
+  type: p=>S.types.size===0||S.types.has(p.type),
+  ban:  p=>!S.banned.has(p.id)
+};
+const KEYS=Object.keys(F);
+const countWithout = drop => S.all.filter(p=>KEYS.every(k=>k===drop||F[k](p))).length;
+
+function applyFilters(){
+  S.cands=S.all.filter(p=>KEYS.every(k=>F[k](p)));
+  S.winner=null; $("result").classList.remove("on"); $("pay").classList.remove("hit");
+  renderTypes(); renderReel(); renderList(); paintMap();
+  $("rLabel").textContent=S.radius; $("cLabel").textContent=S.cands.length;
+  $("lever").disabled=S.loading||S.cands.length<1;
+}
+function emptyHint(){
+  if(!S.all.length) return ["","검색된 식당이 없습니다. 위치를 옮겨 보세요."];
+  const msg={rad:["반경 넓히기",`반경을 늘리면 %n곳이 나옵니다.`],
+    rate:["평점 조건 낮추기","평점 조건을 낮추면 %n곳이 나옵니다."],
+    cnt:["리뷰 수 조건 낮추기","리뷰 수 조건을 낮추면 %n곳이 나옵니다."],
+    open:["영업 중 필터 끄기","‘지금 영업 중만’을 끄면 %n곳이 나옵니다."],
+    type:["종류 선택 해제","종류 선택을 풀면 %n곳이 나옵니다."],
+    ban:["제외 목록 비우기","빼 둔 곳을 되살리면 %n곳이 나옵니다."]};
+  const active={rad:S.radius<1000,rate:S.minRate>0,cnt:S.minCount>0,
+    open:S.openOnly,type:S.types.size>0,ban:S.banned.size>0};
+  for(const k of ["type","ban","cnt","rate","open","rad"]){
+    if(!active[k]) continue;
+    const n=countWithout(k);
+    if(n>0) return ["조건에 맞는 곳이 없습니다",msg[k][1].replace("%n",n)];
+  }
+  return ["조건에 맞는 곳이 없습니다","반경을 넓히거나 조건을 하나씩 풀어 보세요."];
+}
+
+/* ══════ 릴 ══════ */
+const walk = m => Math.max(1,Math.round(m/67));
+function itemHTML(p){
+  const nm=esc(p.name), th=fallbackThumb(p.name);
+  return `<div class="item">
+    <img class="thumb" src="${th}" alt="">
+    <div class="meta">
+      <div class="nm">${nm}</div>
+      <div class="sub">
+        ${p.rating?`<span class="badge">★ ${p.rating.toFixed(1)}</span>`:""}
+        ${esc(p.type)} · ${p.dist}m · 도보 ${walk(p.dist)}분${p.open===false?" · 영업종료":""}
+      </div>
+    </div></div>`;
+}
+const skelHTML = () => `<div class="skel">${
+  Array.from({length:3},()=>`<div class="item"><div class="thumb"></div>
+    <div class="meta"><div class="bar"></div><div class="bar"></div></div></div>`).join("")}</div>`;
+
+function renderReel(){
+  const r=$("reel"), em=$("emptyMsg"), n=S.cands.length;
+  r.classList.remove("spin","settle"); r.style.transform="translateY(0px)";
+  if(S.loading){ em.classList.remove("on"); r.innerHTML=skelHTML(); return; }
+  if(!n){
+    r.innerHTML="";
+    const [t,d]=emptyHint();
+    em.innerHTML=`<b>${esc(t)}</b><span>${esc(d)}</span>`;
+    em.classList.add("on"); return;
+  }
+  em.classList.remove("on");
+  let body=S.cands; while(body.length<3) body=body.concat(S.cands);
+  r.innerHTML=itemHTML(S.cands[n-1])+body.map(itemHTML).join("");
+}
+const rand = a => a[Math.floor(Math.random()*a.length)];
+function pickWinner(){
+  let pool=S.cands;
+  const fresh=pool.filter(p=>!S.recent.includes(p.id));
+  if(fresh.length>=2) pool=fresh;
+  if(!S.boost) return rand(pool);
+  const w=pool.map(p=>Math.pow(Math.max(.25,(p.rating||3.2)-2.8),1.8));
+  let r=Math.random()*w.reduce((a,b)=>a+b,0);
+  for(let i=0;i<pool.length;i++){ r-=w[i]; if(r<=0) return pool[i]; }
+  return pool[pool.length-1];
+}
+const buildStrip = winner =>
+  itemHTML(rand(S.cands)) +
+  Array.from({length:STRIP},(_,i)=>itemHTML(i===LAND?winner:rand(S.cands))).join("");
+
+function renderList(){
+  $("listCount").textContent=S.cands.length+"곳";
+  $("list").innerHTML=S.cands.length ? S.cands.map(p=>`
+    <div class="li">
+      <img class="thumb" src="${fallbackThumb(p.name)}" alt="">
+      <div style="min-width:0">
+        <div class="n">${esc(p.name)}</div>
+        <div class="s">${p.rating?`★ ${p.rating.toFixed(1)} (${p.count}) · `:""}${esc(p.type)}</div>
+      </div>
+      <div class="d">${p.dist}m<br><span style="color:#546E68">도보 ${walk(p.dist)}분</span></div>
+    </div>`).join("")
+    : `<p style="font-size:13px;color:#5C7A72;margin:4px 0">${esc(emptyHint()[1])}</p>`;
+}
+
+/* ══════ 소리 ══════ */
+let AC=null;
+function ensureAudio(){
+  if(!S.sound) return;
+  try{
+    AC = AC || new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==="suspended") AC.resume();
+  }catch(e){}
+}
+function beep(freq,dur=.06,type="square",vol=.055){
+  if(!S.sound||!AC) return;
+  try{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+dur);
+    o.connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime+dur+.01);
+  }catch(e){}
+}
+const clunk = () => beep(110,.13,"sawtooth",.075);
+const fanfare = () => [660,880,1170].forEach((f,i)=>setTimeout(()=>beep(f,.09,"square",.06),i*95));
+
+/* ══════ 스핀 ══════ */
+const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const DUR=reduced?600:4200, OVER=reduced?0:16;
+$("reel").style.setProperty("--dur",DUR+"ms");
+
+function spin(fromDrag){
+  if(S.spinning||!S.cands.length||S.loading){
+    lever.style.setProperty("--pull","0px"); return;
+  }
+  S.spinning=true; S.winner=null;
+  ensureAudio(); clunk();
+  $("result").classList.remove("on"); $("pay").classList.remove("hit");
+  if(!fromDrag) lever.style.setProperty("--pull",leverTravel()+"px");
+  setTimeout(()=>lever.style.setProperty("--pull","0px"),fromDrag?70:200);
+
+  const winner=pickWinner(), r=$("reel");
+  r.classList.remove("spin","settle");
+  r.innerHTML=buildStrip(winner);
+  r.style.transform="translateY(0px)"; void r.offsetHeight;
+  r.classList.add("spin");
+  r.style.transform=`translateY(${-(LAND*H+OVER)}px)`;
+
+  let last=0; const t0=performance.now();
+  (function watch(){
+    let cur=last;
+    try{ cur=Math.floor(-(new DOMMatrixReadOnly(getComputedStyle(r).transform)).m42/H); }catch(_){}
+    if(cur!==last){ last=cur; beep(320+(cur%3)*70); }
+    if(performance.now()-t0<DUR+40) requestAnimationFrame(watch);
+  })();
+
+  setTimeout(()=>{
+    r.classList.remove("spin"); r.classList.add("settle");
+    r.style.transform=`translateY(${-LAND*H}px)`;
+    S.spinning=false; S.winner=winner;
+    S.recent.unshift(winner.id); S.recent=S.recent.slice(0,3);
+    $("pay").classList.add("hit");
+    showResult(winner); paintMap(); fanfare();
+    if(navigator.vibrate) navigator.vibrate([14,70,26]);
+  },DUR+40);
+}
+
+function showResult(p){
+  const nav = p.uri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}`;
+  const hero = photoUrl(p);
+  $("result").innerHTML=`
+    ${hero?`<div class="rhero"><img src="${hero}" alt="" loading="lazy"
+        onerror="this.closest('.rhero').remove()"></div>`:""}
+    <div class="rtop">오늘의 당첨</div>
+    <h2>${esc(p.name)}</h2>
+    <div class="rmeta">
+      ${p.rating?`★ ${p.rating.toFixed(1)} · 리뷰 ${p.count}개 · `:""}${esc(p.type)}<br>
+      여기서 ${p.dist}m · 걸어서 약 ${walk(p.dist)}분${p.open===false?" · 지금 영업종료":""}
+    </div>
+    <div class="acts">
+      <a class="go" href="${nav}" target="_blank" rel="noopener">길찾기</a>
+      ${p.tel?`<a href="tel:${p.tel.replace(/[^0-9+]/g,"")}">전화</a>`:""}
+      <button id="again">다시 돌리기</button>
+    </div>
+    <button class="skip" id="skip">여기 빼고 다시 뽑기</button>`;
+  $("result").classList.add("on");
+  $("again").onclick=()=>spin();
+  $("skip").onclick=()=>{
+    S.banned.add(p.id); applyFilters();
+    if(S.cands.length){ spin(); }
+    else { S.banned.clear(); applyFilters(); toast("남는 곳이 없어 제외 목록을 비웠습니다"); }
+  };
+}
+
+/* ══════ 레버 ══════ */
+const lever=$("lever");
+const leverTravel = () => Math.max(40,lever.clientHeight-96);
+let drag=null, lastPointer=0;
+lever.addEventListener("pointerdown",e=>{
+  if(lever.disabled||S.spinning) return;
+  ensureAudio(); lastPointer=Date.now();
+  try{ lever.setPointerCapture(e.pointerId); }catch(_){}
+  drag={y:e.clientY,max:0}; lever.classList.add("dragging");
+});
+lever.addEventListener("pointermove",e=>{
+  if(!drag) return;
+  const d=Math.max(0,Math.min(leverTravel(),e.clientY-drag.y));
+  if(d>drag.max+18) beep(180,.03,"square",.03);
+  drag.max=Math.max(drag.max,d);
+  lever.style.setProperty("--pull",d+"px");
+});
+function endDrag(){
+  if(!drag) return;
+  const {max}=drag; drag=null;
+  lever.classList.remove("dragging");
+  lastPointer=Date.now();
+  if(max<8 || max>leverTravel()*0.55){ spin(true); }
+  else { lever.style.setProperty("--pull","0px"); clunk(); }
+}
+lever.addEventListener("pointerup",endDrag);
+lever.addEventListener("pointercancel",endDrag);
+lever.addEventListener("click",()=>{ if(Date.now()-lastPointer>400) spin(); });
+
+/* ══════ 컨트롤 ══════ */
+const RATES=[[0,"전체"],[3.5,"3.5+"],[4,"4.0+"],[4.5,"4.5+"]];
+const COUNTS=[[0,"전체"],[10,"10+"],[30,"30+"],[100,"100+"]];
+const renderChips=(el,defs,cur,attr)=>$(el).innerHTML=defs.map(([v,l])=>
+  `<button class="chip" data-${attr}="${v}" data-on="${cur===v}">${l}</button>`).join("");
+const renderRates  = () => renderChips("rateChips",RATES,S.minRate,"rate");
+const renderCounts = () => renderChips("countChips",COUNTS,S.minCount,"cnt");
+
+function renderTypes(){
+  const base=S.all.filter(p=>F.rad(p));
+  const tally={};
+  for(const p of base) tally[p.type]=(tally[p.type]||0)+1;
+  const list=Object.entries(tally).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  for(const t of [...S.types]) if(!tally[t]) S.types.delete(t);
+  $("typeChips").innerHTML = list.length
+    ? list.map(([t,n])=>`<button class="chip" data-type="${esc(t)}" data-on="${S.types.has(t)}">${esc(t)}<small>${n}</small></button>`).join("")
+    : `<span style="font-size:12px;color:#5C7A72">반경 안에 표시할 종류가 없습니다</span>`;
+  $("typeClear").style.visibility=S.types.size?"visible":"hidden";
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-rate],[data-cnt],[data-type]"); if(!b) return;
+  if(b.dataset.rate!==undefined){ S.minRate=+b.dataset.rate; localStorage.setItem("fp-rate",S.minRate); renderRates(); }
+  else if(b.dataset.cnt!==undefined){ S.minCount=+b.dataset.cnt; localStorage.setItem("fp-count",S.minCount); renderCounts(); }
+  else { const t=b.dataset.type; S.types.has(t)?S.types.delete(t):S.types.add(t); }
+  applyFilters();
+});
+$("typeClear").onclick=()=>{ S.types.clear(); applyFilters(); };
+
+const rg=$("radius");
+rg.value=S.radius; $("rVal").textContent=S.radius+" m";
+rg.oninput=()=>{ S.radius=+rg.value; $("rVal").textContent=S.radius+" m"; $("rLabel").textContent=S.radius; };
+rg.onchange=()=>{ localStorage.setItem("fp-radius",S.radius); applyFilters(); };
+
+function bindSw(id,get,set,refresh){
+  const el=$(id);
+  const upd=()=>{ el.dataset.on=get(); el.setAttribute("aria-checked",get()); };
+  const go=()=>{ set(!get()); upd(); if(refresh) applyFilters(); };
+  el.onclick=go;
+  el.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); go(); } };
+  upd();
+}
+bindSw("openSw",()=>S.openOnly,v=>{S.openOnly=v;localStorage.setItem("fp-open",v?"1":"0");},true);
+bindSw("boostSw",()=>S.boost,v=>{S.boost=v;localStorage.setItem("fp-boost",v?"1":"0");});
+bindSw("soundSw",()=>S.sound,v=>{S.sound=v;localStorage.setItem("fp-sound",v?"1":"0"); if(v){ensureAudio();beep(700,.07);}});
+
+$("refresh").onclick=()=>{ sessionStorage.removeItem(cacheKey()); S.banned.clear(); locate(); };
+
+/* ══════ 설치 · 시작 ══════ */
+let deferred=null;
+addEventListener("beforeinstallprompt",e=>{
+  e.preventDefault(); deferred=e;
+  const b=$("install"); b.style.display="block";
+  b.onclick=async()=>{ b.style.display="none"; deferred.prompt(); deferred=null; };
+});
+const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent);
+const standalone=matchMedia("(display-mode: standalone)").matches||navigator.standalone;
+if(isIOS && !standalone)
+  $("foot").innerHTML="아이폰에서는 공유 버튼 → ‘홈 화면에 추가’로 설치합니다.<br>장소 정보 · 평점 제공: Google";
+
+if("serviceWorker" in navigator && location.protocol==="https:")
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+
+renderRates(); renderCounts(); drawDemoMap(); loadGMap();
+if(insecure()||framed()){ $("why").textContent=whyBlocked(1); $("manual").classList.add("on"); }
+locate();
+</script>
+</body>
+</html>
