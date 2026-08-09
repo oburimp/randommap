@@ -509,7 +509,7 @@ $("coordGo").onclick=()=>{
 };
 
 /* ══════ 검색 ══════ */
-const cacheKey = () => `fp-c-${S.lat.toFixed(3)},${S.lng.toFixed(3)}`;
+const cacheKey = () => `fp-c2-${S.lat.toFixed(3)},${S.lng.toFixed(3)}`;
 function haversine(a,b,c,d){
   const R=6371000, t=x=>x*Math.PI/180;
   const dl=t(c-a), dg=t(d-b);

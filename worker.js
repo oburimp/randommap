@@ -93,7 +93,7 @@ async function nearby(request, env, ctx, cors) {
   // 좌표를 약 110m 격자로 반올림해 캐시 적중률을 올리고 실제 API 호출을 줄입니다.
   const gLat = lat.toFixed(3);
   const gLng = lng.toFixed(3);
-  const cacheKey = new Request(`https://cache.local/nearby/${gLat}/${gLng}`);
+  const cacheKey = new Request(`https://cache.local/nearby/v2/${gLat}/${gLng}`);
   const cache = caches.default;
 
   const hit = await cache.match(cacheKey);
