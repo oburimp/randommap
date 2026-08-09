@@ -55,8 +55,17 @@ h1 span{color:var(--gold)}
 .loc button{background:none;border:none;color:var(--gold);font-size:12px;cursor:pointer;
   text-decoration:underline;text-underline-offset:3px;padding:0;margin-left:auto}
 
+/* ── 카테고리 세그먼트 ── */
+.seg{display:flex;gap:5px;margin-top:18px;padding:5px;background:var(--glass);
+  border:1px solid var(--line);border-radius:14px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.segbtn{flex:1;padding:11px 8px;border:none;border-radius:10px;background:transparent;
+  color:#9CB8AF;font-size:14px;font-weight:600;cursor:pointer;transition:.16s;
+  font-family:inherit}
+.segbtn[data-on="true"]{background:var(--gold);color:#241C05}
+
 /* ── 슬롯 ── */
-.machine{display:flex;gap:12px;align-items:stretch;margin-top:18px}
+.machine{display:flex;gap:12px;align-items:stretch;margin-top:12px}
 .slot{flex:1;position:relative;background:var(--glass);border:1px solid var(--line);
   border-radius:18px;overflow:hidden;
   box-shadow:0 24px 60px rgba(0,0,0,.6), inset 0 0 0 1px rgba(241,233,214,.05);
@@ -227,6 +236,12 @@ input[type=range]{width:100%;accent-color:#F2C14E;height:24px}
     </div>
   </div>
 
+  <div class="seg" id="catSeg" role="tablist" aria-label="음식점 · 카페 선택">
+    <button class="segbtn" data-cat="all" role="tab">전체</button>
+    <button class="segbtn" data-cat="food" role="tab">음식점</button>
+    <button class="segbtn" data-cat="cafe" role="tab">카페</button>
+  </div>
+
   <div class="machine">
     <div class="slot">
       <div id="window">
@@ -296,6 +311,7 @@ const S = {
   all:[], cands:[], loading:false,
   radius:+LS("fp-radius",500), minRate:+LS("fp-rate",0), minCount:+LS("fp-count",0),
   openOnly:LS("fp-open","0")==="1", sound:LS("fp-sound","1")!=="0", boost:LS("fp-boost","0")==="1",
+  category:LS("fp-cat","all"),
   types:new Set(), banned:new Set(), recent:[],
   spinning:false, winner:null, map:null, markers:[]
 };
@@ -315,10 +331,13 @@ const DEMO = [
   ["버거피플","버거",4.0,1760,480,220],["쌀국수 사이공","베트남",4.5,930,350,-260],
   ["철판마초","일식",4.8,24,620,180],["동네반점","중식",3.6,41,540,-320],
   ["초밥연구소","스시",4.6,1380,700,90],["김밥천사","분식",3.8,210,140,-100],
-  ["명동칼국수","한식",4.4,760,860,300],["타코스 로코","멕시칸",4.2,8,930,-380]
+  ["명동칼국수","한식",4.4,760,860,300],["타코스 로코","멕시칸",4.2,8,930,-380],
+  ["블루보틀 커피","카페",4.5,320,90,-30],["어니언 베이커리","베이커리",4.6,540,-70,110],
+  ["설빙","디저트",4.1,210,300,40],["폴바셋","카페",4.0,780,-240,-150]
 ];
+const DEMO_CAFE=new Set(["카페","베이커리","디저트"]);
 const demoData = () => DEMO.map(([name,type,rating,count,dx,dy],i)=>({
-  id:"demo"+i, name, type, rating, count,
+  id:"demo"+i, name, type, rating, count, category:DEMO_CAFE.has(type)?"cafe":"food",
   lat:S.lat+dy/111000, lng:S.lng+dx/(111000*Math.cos(S.lat*Math.PI/180)),
   dist:Math.round(Math.hypot(dx,dy)), open:i%7!==3, photo:null, uri:null, tel:null
 })).sort((a,b)=>a.dist-b.dist);
@@ -530,6 +549,7 @@ async function fetchPlaces(){
 /* ══════ 필터 ══════ */
 const F = {
   rad:  p=>p.dist<=S.radius,
+  cat:  p=>S.category==="all"||(p.category||"food")===S.category,
   rate: p=>p.rating>=S.minRate,
   cnt:  p=>p.count>=S.minCount,
   open: p=>!S.openOnly||p.open!==false,
@@ -553,10 +573,11 @@ function emptyHint(){
     cnt:["리뷰 수 조건 낮추기","리뷰 수 조건을 낮추면 %n곳이 나옵니다."],
     open:["영업 중 필터 끄기","‘지금 영업 중만’을 끄면 %n곳이 나옵니다."],
     type:["종류 선택 해제","종류 선택을 풀면 %n곳이 나옵니다."],
+    cat:["카테고리 바꾸기","‘전체’로 바꾸면 %n곳이 나옵니다."],
     ban:["제외 목록 비우기","빼 둔 곳을 되살리면 %n곳이 나옵니다."]};
   const active={rad:S.radius<1000,rate:S.minRate>0,cnt:S.minCount>0,
-    open:S.openOnly,type:S.types.size>0,ban:S.banned.size>0};
-  for(const k of ["type","ban","cnt","rate","open","rad"]){
+    open:S.openOnly,type:S.types.size>0,cat:S.category!=="all",ban:S.banned.size>0};
+  for(const k of ["type","ban","cnt","rate","cat","open","rad"]){
     if(!active[k]) continue;
     const n=countWithout(k);
     if(n>0) return ["조건에 맞는 곳이 없습니다",msg[k][1].replace("%n",n)];
@@ -753,7 +774,7 @@ const renderRates  = () => renderChips("rateChips",RATES,S.minRate,"rate");
 const renderCounts = () => renderChips("countChips",COUNTS,S.minCount,"cnt");
 
 function renderTypes(){
-  const base=S.all.filter(p=>F.rad(p));
+  const base=S.all.filter(p=>F.rad(p)&&F.cat(p));
   const tally={};
   for(const p of base) tally[p.type]=(tally[p.type]||0)+1;
   const list=Object.entries(tally).sort((a,b)=>b[1]-a[1]).slice(0,8);
@@ -771,6 +792,18 @@ document.addEventListener("click",e=>{
   applyFilters();
 });
 $("typeClear").onclick=()=>{ S.types.clear(); applyFilters(); };
+
+function renderCatSeg(){
+  document.querySelectorAll("#catSeg [data-cat]").forEach(b=>{
+    const on=b.dataset.cat===S.category;
+    b.dataset.on=on; b.setAttribute("aria-selected",on);
+  });
+}
+$("catSeg").addEventListener("click",e=>{
+  const b=e.target.closest("[data-cat]"); if(!b) return;
+  S.category=b.dataset.cat; localStorage.setItem("fp-cat",S.category);
+  S.types.clear(); renderCatSeg(); applyFilters();
+});
 
 const rg=$("radius");
 rg.value=S.radius; $("rVal").textContent=S.radius+" m";
@@ -806,7 +839,7 @@ if(isIOS && !standalone)
 if("serviceWorker" in navigator && location.protocol==="https:")
   navigator.serviceWorker.register("sw.js").catch(()=>{});
 
-renderRates(); renderCounts(); drawDemoMap(); loadGMap();
+renderRates(); renderCounts(); renderCatSeg(); drawDemoMap(); loadGMap();
 if(insecure()||framed()){ $("why").textContent=whyBlocked(1); $("manual").classList.add("on"); }
 locate();
 </script>

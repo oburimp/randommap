@@ -25,6 +25,7 @@ const FIELDS = [
   "places.userRatingCount",
   "places.location",
   "places.photos",
+  "places.primaryType",
   "places.primaryTypeDisplayName",
   "places.googleMapsUri",
   "places.nationalPhoneNumber",
@@ -32,6 +33,12 @@ const FIELDS = [
 ].join(",");
 
 const SEARCH_RADIUS = 1200; // 클라 슬라이더 최대치보다 넉넉히. 반경 조절은 클라에서 필터링.
+
+// 카페로 분류할 primaryType. 한 번의 호출로 음식점+카페를 같이 받아 category로 나눕니다.
+const CAFE_TYPES = new Set([
+  "cafe", "coffee_shop", "bakery", "tea_house",
+  "dessert_shop", "ice_cream_shop", "donut_shop",
+]);
 const NEARBY_TTL = 60 * 60; // 1시간. 길게 잡을수록 저렴하지만 "지금 영업 중"이 오래된 값이 됩니다.
 const PHOTO_TTL = 60 * 60 * 12;
 const PHOTO_NAME = /^places\/[A-Za-z0-9_-]+\/photos\/[A-Za-z0-9_-]+$/;
@@ -105,7 +112,7 @@ async function nearby(request, env, ctx, cors) {
       "X-Goog-FieldMask": FIELDS,
     },
     body: JSON.stringify({
-      includedTypes: ["restaurant"],
+      includedTypes: ["restaurant", "cafe", "bakery"],
       maxResultCount: 20,
       languageCode: "ko",
       regionCode: "KR",
@@ -125,6 +132,7 @@ async function nearby(request, env, ctx, cors) {
   const places = (data.places || []).map((p) => ({
     id: p.id,
     name: p.displayName?.text || "이름 없음",
+    category: CAFE_TYPES.has(p.primaryType) ? "cafe" : "food",
     type: p.primaryTypeDisplayName?.text || "음식점",
     rating: p.rating || 0,
     count: p.userRatingCount || 0,
